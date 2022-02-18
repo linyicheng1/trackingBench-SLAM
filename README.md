@@ -1,2 +1,2 @@
 # TrackingBench-SLAM
-Tracking visual feature benchmarks for SLAM algorithms.
+Visual feature tracking benchmarks for SLAM algorithms.
