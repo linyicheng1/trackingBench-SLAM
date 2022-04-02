@@ -1,5 +1,5 @@
 #include "types/Frame.h"
-
+#include "types/MapPoint.h"
 #include <cmath>
 #include <opencv2/imgproc.hpp>
 
@@ -63,35 +63,81 @@ namespace TRACKING_BENCH
 
     }
 
-    Frame::Frame(const cv::Mat &imGray, const double &timeStamp, TRACKING_BENCH::Extractor *extractor, Distortion* distortion):
-    mpExtractor(extractor), mpDistortion(distortion)
+    Frame::Frame(const cv::Mat &imGray, const double &timeStamp, TRACKING_BENCH::Extractor *extractor, CameraModel* camera):
+    mpExtractor(extractor), mpCamera(camera)
     {
         mnId = nNextId++;
         ExtractPoint(imGray);
-        N = (int)mvKeys.size();
         mpCamera->UnDistortKeyPoints();
-        mvpMapPoints = std::vector<MapPoint*>(N, static_cast<MapPoint*>(nullptr));
+        mvpMapPoints = std::vector<MapPoint*>(mvKeys.size(), static_cast<MapPoint*>(nullptr));
+    }
+
+    void Frame::SetPose(const cv::Mat& Tcw)
+    {
+        std::unique_lock<std::mutex> lock(mMutexPose);
+        mTcw = Tcw.clone();
+        cv::Mat Rcw = mTcw.rowRange(0, 3).colRange(0, 3);
+        cv::Mat tcw = mTcw.rowRange(0,3).col(3);
+        cv::Mat Rwc = Rcw.t();
+        mOw = -Rwc * tcw;
+
+        mTwc = cv::Mat::eye(4, 4, Tcw.type());
+        Rwc.copyTo(mTwc.rowRange(0, 3).colRange(0, 3));
+        mOw.copyTo(mTwc.rowRange(0, 3).col(3));
+    }
+    cv::Mat Frame::GetPose()
+    {
+        std::unique_lock<std::mutex> lock(mMutexPose);
+        return mTcw.clone();
+    }
+
+    cv::Mat Frame::GetPoseInverse()
+    {
+        std::unique_lock<std::mutex> lock(mMutexPose);
+        return mTwc.clone();
+    }
+
+    cv::Mat Frame::GetCameraCenter()
+    {
+        std::unique_lock<std::mutex> lock(mMutexPose);
+        return mOw.clone();
+    }
+
+    cv::Mat Frame::GetRotation()
+    {
+        std::unique_lock<std::mutex> lock(mMutexPose);
+        return mTwc.rowRange(0, 3).colRange(0, 3).clone();
+    }
+
+    cv::Mat Frame::GetTranslation()
+    {
+        std::unique_lock<std::mutex> lock(mMutexPose);
+        return mTwc.rowRange(0, 3).col(3).clone();
     }
 
     void Frame::ExtractPoint(const cv::Mat &img)
     {
         (*mpExtractor)(img, cv::Mat(), mvKeysUn, mDescriptors);
     }
-
-    void Frame::SetPose(const cv::Mat& Tcw)
+    void Frame::AssignFeaturesToGrid()
     {
-        mTcw = Tcw.clone();
-        mRcw = mTcw.rowRange(0, 3).colRange(0, 3);
-        mRwc = mRcw.t();
-        mtcw = mTcw.rowRange(0,3).col(3);
-        mOw = -mRcw.t() * mtcw;
+        int nReserve = (int)(0.5f * (float)mvKeysUn.size() / (float)(FRAME_GRID_ROWS * FRAME_GRID_COLS));
+        for (auto & i : mGrid)
+            for (auto & j : i)
+                j.reserve(nReserve);
+        for(size_t i=0; i< mvKeysUn.size(); i ++)
+        {
+            const cv::KeyPoint &kp = mvKeysUn[i];
+            int nGridPosX, nGridPosY;
+            if(PosInGrid(kp, nGridPosX, nGridPosY))
+                mGrid[nGridPosX][nGridPosY].push_back(i);
+        }
     }
-
     std::vector<size_t> Frame::GetFeaturesInArea(const float &x, const float &y, const float &r, const int minLevel,
                                                  const int maxLevel) const
     {
         std::vector<size_t> vIndices;
-        vIndices.reserve(N);
+        vIndices.reserve(mvKeysUn.size());
 
         const int nMinCellX = std::max(0,(int)std::floor((x-(float)mpCamera->mnMinX-r)*mpCamera->mfGridElementWidthInv));
         if(nMinCellX>=FRAME_GRID_COLS)
@@ -142,6 +188,70 @@ namespace TRACKING_BENCH
 
         return vIndices;
     }
+
+    bool Frame::PosInGrid(const cv::KeyPoint &kp, int &posX, int &posY)
+    {
+        posX = round((kp.pt.x - (float)mpCamera->mnMinX) * mpCamera->mfGridElementWidthInv);
+        posY = round((kp.pt.y - (float)mpCamera->mnMinY) * (float)mpCamera->mfGridElementHeightInv);
+
+        if(posX<0||posX>=FRAME_GRID_COLS || posY < 0 || posY>= FRAME_GRID_ROWS)
+            return false;
+        return true;
+    }
+
+    std::set<MapPoint *> Frame::GetMapPoints()
+    {
+        std::unique_lock<std::mutex> lock(mMutexFeatures);
+        std::set<MapPoint*> s;
+        for(auto & mvpMapPoint : mvpMapPoints)
+        {
+            if(!mvpMapPoint)
+                continue;
+            MapPoint* pMP = mvpMapPoint;
+            if(!pMP->isBad())
+                s.insert(pMP);
+        }
+        return s;
+    }
+
+    std::vector<MapPoint *> Frame::GetMapPointMatches()
+    {
+        std::unique_lock<std::mutex> lock(mMutexFeatures);
+        return mvpMapPoints;
+    }
+
+    int Frame::TrackedMapPoint(const int &minObs)
+    {
+        std::unique_lock<std::mutex> lock(mMutexFeatures);
+        int nPoints = 0;
+        const bool bCheckObs = minObs > 0;
+        for(int i = 0;i < mvKeysUn.size();i ++)
+        {
+            MapPoint* pMP = mvpMapPoints[i];
+            if(pMP)
+            {
+                if(!pMP->isBad())
+                {
+                    if(bCheckObs)
+                    {
+                        if(mvpMapPoints[i]->Observations() > minObs)
+                            nPoints ++;
+                    }
+                    else
+                        nPoints ++;
+                }
+            }
+        }
+        return nPoints;
+    }
+
+    MapPoint *Frame::GetMapPoint(const size_t &idx)
+    {
+        std::unique_lock<std::mutex> lock(mMutexFeatures);
+        return mvpMapPoints[idx];
+    }
+
+
 
 
 }

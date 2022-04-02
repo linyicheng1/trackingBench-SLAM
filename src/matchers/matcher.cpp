@@ -10,11 +10,50 @@ namespace TRACKING_BENCH
         m_bf_matcher = std::make_shared<cv::BFMatcher>(cv::NORM_HAMMING, true);
     }
 
-    std::vector<cv::DMatch> Matcher::searchByNN(Frame *F1, Frame *F2)
+    /**
+     * @brief Match by OpenCV nearest neighbor
+     * @param F1 Current Frame Or Key Frame
+     * @param F2 Reference Frame Or Key Frame
+     * @param MinLevel Min Level
+     * @param MaxLevel Max Level
+     * @param MapPointOnly Only Match the features associate with Map Point
+     * @return Matches
+     */
+    std::vector<cv::DMatch> Matcher::searchByNN(Frame *F1, Frame *F2, int MinLevel, int MaxLevel, bool MapPointOnly)
     {
+        assert(MinLevel <= MaxLevel);
+        cv::Mat d1, d2;
+        std::vector<int> id1;
+        if(MinLevel == 0 && MaxLevel == F1->getMaxLevel() && !MapPointOnly)
+        {// using all points to match
+            d1 = F1->getDescriptors();
+            d2 = F2->getDescriptors();
+        }
+        else
+        {
+            id1.resize(F1->getKeysUn().size());
+
+            int cnt = 0, match_num = 0;
+            for(auto&f:F1->getKeysUn())
+            {
+                if(f.octave >= MinLevel && f.octave <= MaxLevel)
+                {// only the features between [MinLevel, MaxLevel]
+                    if(!MapPointOnly || F1->getMapPoint(&f) != nullptr)
+                    {// all points with MapPointOnly == false , Only Match the features associate with Map Point when MapPointOnly == true
+                        id1.at(match_num) = cnt;
+                        // descriptor
+                        d1.row(match_num) = F1->getDescriptors().row(cnt);
+                        match_num ++;
+                    }
+                }
+                cnt ++;
+            }
+            d2 = F2->getDescriptors();
+        }
+
         std::vector<cv::DMatch> matches;
         std::vector<cv::DMatch> good_matches;
-        m_flann_matcher->match(F1->getDescriptors(), F2->getDescriptors(), matches);
+        m_flann_matcher->match(d1, d2, matches);
 
         float min_distance = std::min_element(matches.begin(), matches.end(),[](const cv::DMatch& m1, const cv::DMatch& m2){return m1.distance < m2.distance;})->distance;
         //float max_distance = std::max_element(matches.begin(), matches.end(),[](const cv::DMatch& m1, const cv::DMatch& m2){return m1.distance < m2.distance;})->distance;
@@ -26,13 +65,42 @@ namespace TRACKING_BENCH
                 good_matches.emplace_back(m);
             }
         }
+        // change ids
+        if(!id1.empty())
+        {
+            for(auto m:good_matches)
+            {
+                m.queryIdx = id1.at(m.queryIdx);
+            }
+        }
         return good_matches;
     }
-    std::vector<cv::DMatch> Matcher::searchByNN(Map *map, Frame *F1)
+
+    /**
+     * @brief Match by OpenCV nearest neighbor
+     * @param map Map Points
+     * @param F1 Current Frame Or Key Frame
+     * @return Matches
+     */
+    std::vector<cv::DMatch> Matcher::searchByNN(Map *map, Frame *F1, bool Projection)
     {
         std::vector<cv::DMatch> matches;
         std::vector<cv::DMatch> good_matches;
         cv::Mat des2;
+        std::vector<int> id1;
+        if(!Projection)
+        {
+            id1.resize(map->);
+            int cnt = 0, match = 0;
+            for(int i = 0; i< map;i ++)
+            {
+                des2.row(i);
+            }
+        }
+        else
+        {// only
+        }
+
         m_flann_matcher->match(F1->getDescriptors(), des2, matches);
 
         float min_distance = std::min_element(matches.begin(), matches.end(),[](const cv::DMatch& m1, const cv::DMatch& m2){return m1.distance < m2.distance;})->distance;
@@ -47,7 +115,7 @@ namespace TRACKING_BENCH
         }
         return good_matches;
     }
-    std::vector<cv::DMatch> Matcher::searchByBF(Frame *F1, Frame *F2)
+    std::vector<cv::DMatch> Matcher::searchByBF(Frame *F1, Frame *F2, bool MapPointOnly)
     {
         std::vector<cv::DMatch> matches;
         std::vector<cv::DMatch> good_matches;
@@ -70,7 +138,7 @@ namespace TRACKING_BENCH
 
     }
 
-    std::vector<cv::DMatch> Matcher::searchByViolence(Frame *F1, Frame *F2)
+    std::vector<cv::DMatch> Matcher::searchByViolence(Frame *F1, Frame *F2, bool MapPointOnly)
     {
         std::vector<cv::DMatch> matches;
         std::vector<int> matches12;
@@ -158,7 +226,7 @@ namespace TRACKING_BENCH
 
     }
 
-    std::vector<cv::DMatch> Matcher::searchByProjection(Frame *F1, Frame *F2)
+    std::vector<cv::DMatch> Matcher::searchByProjection(Frame *F1, Frame *F2, bool MapPointOnly)
     {
 
     }
@@ -168,18 +236,37 @@ namespace TRACKING_BENCH
 
     }
 
-    std::vector<cv::DMatch> Matcher::searchByBow(Frame *F1, Frame *F2)
+    std::vector<cv::DMatch> Matcher::searchByFeatureAlignment(Frame *F1, Frame *F2, bool MapPointOnly)
     {
 
     }
 
-    std::vector<cv::DMatch> Matcher::searchByOPFlow(Frame *F1, Frame *F2)
+    std::vector<cv::DMatch> Matcher::searchByFeatureAlignment(Map *map, Frame *F1)
     {
 
     }
 
+    std::vector<cv::DMatch> Matcher::searchByBow(Frame *F1, Frame *F2, bool MapPointOnly)
+    {
 
-    std::vector<cv::DMatch> Matcher::searchByDirect(Frame *F1, Frame *F2, bool ph)
+    }
+
+    std::vector<cv::DMatch> Matcher::searchByBow(Map *map, Frame *F2)
+    {
+
+    }
+
+    std::vector<cv::DMatch> Matcher::searchByOPFlow(Frame *F1, Frame *F2, bool MapPointOnly)
+    {
+
+    }
+
+    std::vector<cv::DMatch> Matcher::searchByOPFlow(Map *map, Frame *F1)
+    {
+
+    }
+
+    std::vector<cv::DMatch> Matcher::searchByDirect(Frame *F1, Frame *F2, bool MapPointOnly, bool ph)
     {
 
     }
@@ -250,9 +337,5 @@ namespace TRACKING_BENCH
             ind3=-1;
         }
     }
-
-
-
-
 }
 
