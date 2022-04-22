@@ -3,34 +3,41 @@
 #include <vector>
 #include <mutex>
 #include <set>
+#include <list>
+#include <memory>
 
 namespace TRACKING_BENCH
 {
     class MapPoint;
-    class KeyFrame;
+    class Frame;
     class Map
     {
     public:
         Map();
         ~Map();
 
-        void AddKeyFrame(KeyFrame* pKF);
-        void AddMapPoint(MapPoint* pMP);
-        void EraseMapPoint(MapPoint* pMP);
-        void EraseKeyFrame(KeyFrame* pKF);
-
-        std::vector<KeyFrame*> GetAllKeyFrames();
-        std::vector<MapPoint*> GetAllMapPoints();
+        void AddKeyFrame(std::shared_ptr<Frame> pKF);
+        void AddMapPoint(const std::shared_ptr<MapPoint>& pMP);
+        void EraseMapPoint(const std::shared_ptr<MapPoint>& pMP);
+        void EraseKeyFrame(std::shared_ptr<Frame> pKF);
+        void EraseMapPointSafe(const std::shared_ptr<MapPoint>& pMP);
+        void EraseKeyFrameSafe(const std::shared_ptr<Frame>& pKF);
+        void RemoveOldFrames(int num);
+        std::vector<std::shared_ptr<Frame>> GetAllKeyFrames();
+        std::vector<std::shared_ptr<MapPoint>> GetAllMapPoints();
 
         long unsigned int MapPointsInMap();
         long unsigned int KeyFramesInMap();
 
         void clear();
         long unsigned int GetMaxKFid();
-    private:
-        std::set<MapPoint*> mspMapPoints;
-        std::set<KeyFrame*> mspKeyFrames;
+        std::mutex mMutexPointCreation;
         std::mutex mMutexMap;
+        std::mutex mMutexMapPoints;
+    private:
+        std::set<std::shared_ptr<MapPoint>> mspMapPoints;
+        std::list<std::shared_ptr<MapPoint>> mspCandidatesMapPoints;
+        std::set<std::shared_ptr<Frame>> mspKeyFrames;
         long unsigned int mnMaxKFid;
     };
 }

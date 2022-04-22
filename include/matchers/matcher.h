@@ -4,6 +4,8 @@
 #include <vector>
 #include "opencv2/features2d.hpp"
 #include <memory>
+#include <Eigen/Core>
+#include <list>
 
 namespace TRACKING_BENCH
 {
@@ -26,39 +28,131 @@ namespace TRACKING_BENCH
 
         // F1 current frame
         // OpenCV NN
-        void setNNParam(int high, float ratio){TH_HIGH = high; nRatio = ratio;}
-        std::vector<cv::DMatch> searchByNN(Frame* F1, Frame* F2, int MinLevel, int MaxLevel, bool MapPointOnly = false);
+        std::vector<cv::DMatch> searchByNN(
+                const std::shared_ptr<Frame>& F1,
+                const std::shared_ptr<Frame>& F2,
+                int MinLevel, int MaxLevel,
+                float ratio, float minTh,
+                bool MapPointOnly = false);
         std::vector<cv::DMatch> searchByNN(Map* map, Frame* F1, bool Projection = true);
         // OpenCV BF
-        std::vector<cv::DMatch> searchByBF(Frame* F1, Frame* F2, bool MapPointOnly = false);
-        std::vector<cv::DMatch> searchByBF(Map* map, Frame* F1);
-        // Violence
-        void setViolenceParam(int low, int high, int length, bool check, float ratio){TH_LOW = low; TH_HIGH = high; HISTO_LENGTH = length;checkOrientation=check;nRatio=ratio;}
-        std::vector<cv::DMatch> searchByViolence(Frame* F1, Frame* F2, bool MapPointOnly = false);
-        std::vector<cv::DMatch> searchByViolence(Map* map, Frame* F1);
+        std::vector<cv::DMatch> searchByBF(
+                const std::shared_ptr<Frame>& F1,
+                const std::shared_ptr<Frame>& F2,
+                int MinLevel, int MaxLevel,
+                float ratio, float minTh,
+                bool MapPointOnly = false);
+        std::vector<cv::DMatch> searchByBF(Map* map, Frame* F1, bool Projection = true);
 
-        // Projection + Feature Point
-        std::vector<cv::DMatch> searchByProjection(Frame* F1, Frame* F2, bool MapPointOnly = false);
+        // Violence
+        void setViolenceParam(int low, int high, int histo_length, bool check, float ratio)
+        {
+            TH_LOW = low;
+            TH_HIGH = high;
+            HISTO_LENGTH = histo_length;
+            checkOrientation=check;
+            nRatio=ratio;
+        }
+        std::vector<cv::DMatch> searchByViolence(
+                const std::shared_ptr<Frame>& F1,
+                const std::shared_ptr<Frame>& F2,
+                int min_level = 0,
+                int max_level = 1,
+                float search_r = 10,
+                bool MapPointOnly = false);
+
+        // Projection
+        void setProjectionParam(int low, int high, int histo_length, bool check, float ratio)
+        {
+            TH_LOW = low;
+            TH_HIGH = high;
+            HISTO_LENGTH = histo_length;
+            checkOrientation=check;
+            nRatio=ratio;
+        }
+
+        std::vector<cv::DMatch> searchByProjection(
+                const std::shared_ptr<Frame>& F1,
+                const std::shared_ptr<Frame>& F2);
+
         std::vector<cv::DMatch> searchByProjection(Map* map, Frame* F1);
 
-        // Projection + Feature Alignment
-        std::vector<cv::DMatch> searchByFeatureAlignment(Frame* F1, Frame* F2, bool MapPointOnly = false);
-        std::vector<cv::DMatch> searchByFeatureAlignment(Map* map, Frame* F1);
         // Bow accelerate ORB only
-        std::vector<cv::DMatch> searchByBow(Frame* F1, Frame* F2, bool MapPointOnly = false);
-        std::vector<cv::DMatch> searchByBow(Map* map, Frame* F2);
-        // Optical flow
-        std::vector<cv::DMatch> searchByOPFlow(Frame* F1, Frame* F2, bool MapPointOnly = false);
-        std::vector<cv::DMatch> searchByOPFlow(Map* map, Frame* F2);
-        // Direct
-        std::vector<cv::DMatch> searchByDirect(Frame* F1, Frame* F2, bool MapPointOnly = false, bool ph = false);
-        std::vector<cv::DMatch> searchByDirect(Map* M, Frame* F1);
+        void setBowParam(int low, int high, int histo_length, bool check, float ratio)
+        {
+            TH_LOW = low;
+            TH_HIGH = high;
+            HISTO_LENGTH = histo_length;
+            checkOrientation=check;
+            nRatio=ratio;
+        }
+        std::vector<cv::DMatch> searchByBow(
+                const std::shared_ptr<Frame>& F1,
+                const std::shared_ptr<Frame>& F2,
+                bool MapPointOnly = false);
 
+        // Optical flow
+        std::vector<cv::DMatch> searchByOPFlow(
+                const std::shared_ptr<Frame>& F1,
+                const std::shared_ptr<Frame>& F2,
+                std::vector<cv::Point2f>& cur_points,
+                bool equalized,
+                bool reject,
+                bool MapPointOnly = false);
+
+        // Projection + Feature Alignment
+        int mnMaxLevel;
+        int mnMinLevel;
+        int mnIter;
+        int mnNTrialsMax;
+        double mdEps;
+        Eigen::Matrix<double, 6, Eigen::Dynamic, Eigen::ColMajor> jacobian_cache;
+
+        struct Candidate {
+            EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+            MapPoint* pt;       //!< 3D point.
+            cv::Vec2d px;     //!< projected 2D pixel location.
+            Candidate(MapPoint* pt, cv::Vec2d& x) : pt(pt), px(x) {}
+        };
+        typedef std::list<Candidate > Cell;
+        typedef std::vector<Cell*> CandidateGrid;
+        /// The grid stores a set of candidate matches. For every grid cell we try to find one match.
+        struct Grid
+        {
+            CandidateGrid cells;
+            std::vector<int> cell_order;
+            int cell_size;
+            int grid_n_cols;
+            int grid_n_rows;
+        };
+        Grid grid_;
+
+        std::vector<cv::DMatch> searchByDirect(Map* M, Frame* F1, Frame* F2);
+
+        static int DescriptorDistance(const cv::Mat& a, const cv::Mat& b);
+        static void ComputeThreeMaxima(std::vector<int>* histo, const int L, int &ind1, int &ind2, int &ind3);
     private:
-        cv::Ptr<cv::FlannBasedMatcher> m_flann_matcher;
+        cv::FlannBasedMatcher m_flann_matcher;
         std::shared_ptr<cv::BFMatcher> m_bf_matcher;
-        static int descriptorDistance(const cv::Mat& a, const cv::Mat& b);
-        static void computeThreeMaxima(std::vector<int>* histo, const int L, int &ind1, int &ind2, int &ind3);
+
+        void rejectWithF(std::vector<cv::Point2f>& pts1, const std::vector<cv::Point2f>& pts2, std::vector<uchar>& status);
+        const int patch_half_size = 2;
+        const int patch_size = 4;
+        const int patch_area = 16;
+        bool have_ref_patch_cache = false;
+        cv::Mat ref_patch_cache;
+        Eigen::Matrix<double, 6, 6> mH;
+        Eigen::Matrix<double, 6, 1> mJRes;
+        Eigen::Matrix<double, 6, 1> mx;
+        Eigen::Matrix<float, 4, 4> SparseImageAlign(Frame* F1, Frame* F2);
+        std::vector<cv::DMatch> FeaturesAlign(Map* M, Frame* F1);
+        double ComputeResiduals(cv::Mat& T_cur_from_ref, Frame* F1, Frame* F2, std::vector<bool>& visible_fts, int level, bool linearize_system, bool compute_weight_scale);
+        void PreComputeReferencePatches( Frame* F1, Frame* F2, int level);
+
+        bool ReprojectCell(Cell& cell, Frame* frame);
+        bool FindMatchDirect(const MapPoint&pt, Frame* F1, cv::Vec2d& px_cur);
+        bool Align2D(const cv::Mat& cur_img, uint8_t* ref_patch_with_border, uint8_t* ref_patch, const int n_iter, Eigen::Vector2d& cur_ps_estimate, bool no_simd = false);
+        bool Align1D(const cv::Mat& cur_img,const Eigen::Vector2f& dir,uint8_t* ref_patch_with_border,uint8_t* ref_patch,const int n_iter,Eigen::Vector2d& cur_px_estimate,double& h_inv);
     };
 }
 

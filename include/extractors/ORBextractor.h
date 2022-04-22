@@ -1,6 +1,8 @@
 #ifndef TRACKING_BENCH_ORBEXTRACTOR_H
 #define TRACKING_BENCH_ORBEXTRACTOR_H
-#include "extractor.h"
+#include <vector>
+#include <list>
+#include <opencv/cv.h>
 
 namespace TRACKING_BENCH
 {
@@ -18,7 +20,7 @@ namespace TRACKING_BENCH
         bool bNoMore;
     };
 
-    class ORBextractor:public Extractor
+    class ORBExtractor
     {
     public:
         enum
@@ -26,19 +28,28 @@ namespace TRACKING_BENCH
             HARRIS_SCORE = 0, FAST_SCORE = 1
         };
 
-        ORBextractor(int nfeatures, float scaleFactor, int nlevels,
-                     int iniThFAST, int minThFAST);
+        ORBExtractor();
 
-        ~ORBextractor() = default;
+        ~ORBExtractor() = default;
 
         // Compute the ORB features and descriptors on an image.
         // ORB are dispersed on the image using an octree.
         // Mask is ignored in the current implementation.
-        void operator()(cv::InputArray image, cv::InputArray mask,
+        void operator()(std::vector<cv::Mat> &images,
+                        std::vector<float> mvScaleFactor,
+                        int targetNum,
+                        float initTh,
+                        float minTH,
                         std::vector<cv::KeyPoint> &keypoints,
-                        cv::OutputArray descriptors) override;
-        void AddPoints(cv::InputArray image, const std::vector<cv::KeyPoint> &exitPoints,
-                               std::vector<cv::KeyPoint> &newPoints, cv::OutputArray &descriptors) override;
+                        cv::Mat& descriptors);
+        void AddPoints(std::vector<cv::Mat>& images,
+                       std::vector<float>& mvScaleFactor,
+                       int targetNum,
+                       float initTh,
+                       float minTH,
+                       const std::vector<cv::KeyPoint> &exitPoints,
+                       std::vector<cv::KeyPoint> &newPoints,
+                       cv::OutputArray &descriptors);
 
 
 
@@ -55,20 +66,21 @@ namespace TRACKING_BENCH
     protected:
 
 
-        void ComputeKeyPointsOctTree(std::vector<std::vector<cv::KeyPoint> > &allKeypoints, const std::vector<cv::KeyPoint>& exitKeyPoints);
+        void ComputeKeyPointsOctTree(std::vector<cv::Mat>& images,
+                                     std::vector<float>& mvScaleFactor,
+                                     int targetNum,
+                                     float initTh,
+                                     float minTH,
+                                     std::vector<std::vector<cv::KeyPoint> > &allKeypoints,
+                                    const std::vector<cv::KeyPoint>& exitKeyPoints);
 
         std::vector<cv::KeyPoint> DistributeOctTree(const std::vector<cv::KeyPoint> &vToDistributeKeys,const std::vector<cv::KeyPoint>& exitKeys,
                                                     const int &minX,const int &maxX, const int &minY, const int &maxY,
                                                     const int &nFeatures, const int &level);
 
-        void ComputeKeyPointsOld(std::vector<std::vector<cv::KeyPoint> > &allKeypoints);
 
         std::vector<cv::Point> pattern;
 
-
-
-        int iniThFAST;
-        int minThFAST;
 
         std::vector<float> mvLevelSigma2;
         std::vector<float> mvInvLevelSigma2;

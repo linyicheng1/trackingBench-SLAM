@@ -1,6 +1,6 @@
 #include "types/Map.h"
-#include "types/KeyFrame.h"
 #include "types/MapPoint.h"
+#include "types/Frame.h"
 
 namespace TRACKING_BENCH
 {
@@ -13,45 +13,65 @@ namespace TRACKING_BENCH
     {
     }
 
-    void Map::AddKeyFrame(KeyFrame* pKF)
+    void Map::AddKeyFrame(std::shared_ptr<Frame> pKF)
     {
         std::unique_lock<std::mutex> lock(mMutexMap);
         mspKeyFrames.insert(pKF);
-        if(pKF->getId())
+        if(pKF->GetId())
         {
-            mnMaxKFid = pKF->getId();
+            mnMaxKFid = pKF->GetId();
         }
     }
 
-    void Map::AddMapPoint(MapPoint* pMP)
+    void Map::AddMapPoint(const std::shared_ptr<MapPoint>& pMP)
     {
         std::unique_lock<std::mutex> lock(mMutexMap);
         mspMapPoints.insert(pMP);
     }
 
-    void Map::EraseMapPoint(MapPoint* pMP)
+    void Map::EraseMapPoint(const std::shared_ptr<MapPoint>& pMP)
     {
         std::unique_lock<std::mutex> lock(mMutexMap);
         mspMapPoints.erase(pMP);
     }
 
-    void Map::EraseKeyFrame(KeyFrame* pKF)
+    void Map::EraseKeyFrame(std::shared_ptr<Frame> pKF)
     {
         std::unique_lock<std::mutex> lock(mMutexMap);
         mspKeyFrames.erase(pKF);
     }
 
-    std::vector<KeyFrame *> Map::GetAllKeyFrames()
+    void Map::EraseMapPointSafe(const std::shared_ptr<MapPoint>& pMP)
+    {
+        auto kfs = pMP->GetObservations();
+        for(auto &kf:kfs)
+        {
+            kf.first->EraseMapPointMatch(pMP);
+        }
+        mspMapPoints.erase(pMP);
+    }
+
+    void Map::EraseKeyFrameSafe(const std::shared_ptr<Frame>& pKF)
+    {
+        auto pts = pKF->GetMapPointMatches();
+        for(auto &pt:pts)
+        {
+            EraseMapPointSafe(pt);
+        }
+        mspKeyFrames.erase(pKF);
+    }
+
+    std::vector<std::shared_ptr<Frame>> Map::GetAllKeyFrames()
     {
         std::unique_lock<std::mutex> lock(mMutexMap);
-        std::vector<KeyFrame*> vKF(mspKeyFrames.begin(), mspKeyFrames.end());
+        std::vector<std::shared_ptr<Frame>> vKF(mspKeyFrames.begin(), mspKeyFrames.end());
         return vKF;
     }
 
-    std::vector<MapPoint *> Map::GetAllMapPoints()
+    std::vector<std::shared_ptr<MapPoint>> Map::GetAllMapPoints()
     {
         std::unique_lock<std::mutex> lock(mMutexMap);
-        std::vector<MapPoint*> vKP(mspMapPoints.begin(), mspMapPoints.end());
+        std::vector<std::shared_ptr<MapPoint>> vKP(mspMapPoints.begin(), mspMapPoints.end());
         return vKP;
     }
 
@@ -69,14 +89,6 @@ namespace TRACKING_BENCH
 
     void Map::clear()
     {
-        for(auto mp : mspMapPoints)
-        {
-            delete mp;
-        }
-        for(auto kf : mspKeyFrames)
-        {
-            delete kf;
-        }
         mspKeyFrames.clear();
         mspMapPoints.clear();
         mnMaxKFid = 0;
@@ -86,5 +98,18 @@ namespace TRACKING_BENCH
     {
         std::unique_lock<std::mutex> lock(mMutexMap);
         return mnMaxKFid;
+    }
+
+    void Map::RemoveOldFrames(int num)
+    {
+        std::unique_lock<std::mutex> lock(mMutexMap);
+        if(mspKeyFrames.size() > num)
+        {
+            const int del_num = (int)mspKeyFrames.size() - num;
+            for (int i = 0;i < del_num;i ++)
+            {
+                mspKeyFrames.erase(mspKeyFrames.end());
+            }
+        }
     }
 }

@@ -3,69 +3,108 @@
 #include <opencv2/core.hpp>
 #include <mutex>
 #include <map>
+#include <Eigen/Core>
+#include <memory>
+#include <utility>
 
 namespace TRACKING_BENCH
 {
-    class KeyFrame;
     class Map;
     class Frame;
+    class MapPoint;
+    class Feature;
+
 
     class MapPoint
     {
     public:
-        MapPoint(const cv::Mat &Pos, KeyFrame* pRefKF, Map* pMap);
-        MapPoint(const cv::Mat &Pos, Frame* pFrame, Map* pMap, const int &idxF);
 
-        void SetWorldPos(const cv::Mat &pos);
-        cv::Mat GetWorldPos();
+        MapPoint(const Eigen::Vector3f &Pos, std::shared_ptr<Map>&  pMap,
+                 std::shared_ptr<Frame>& pFrame,
+                 std::shared_ptr<Feature>&  features);
+        // pos
+        void SetWorldPos(const Eigen::Vector3f& pos);
+        Eigen::Vector3f GetWorldPos();
 
-        cv::Mat GetNormal();
-        KeyFrame* GetReferenceKeyFrame();
+        // normal
+        Eigen::Vector3f GetNormal();
 
-        std::map<KeyFrame*, size_t> GetObservations();
+        // related frames
+        std::shared_ptr<Frame> GetReferenceFrame();
+        std::map<std::shared_ptr<Frame>, size_t> GetObservations();
+        std::vector<std::shared_ptr<Feature>> GetFeatures();
+        std::shared_ptr<Feature> GerReferenceFeature();
         int Observations();
+        int GetIndexInFrame(const std::shared_ptr<Frame>& pKF);
+        bool IsInFrame(const std::shared_ptr<Frame>& pKF);
 
-        void AddObservation();
-        void EraseObservation();
-
-        int GetIndexInKeyFrame(KeyFrame* pKF);
-        bool IsInKeyFrame(KeyFrame* pKF);
+        // observation operator
+        void AddObservation(const std::shared_ptr<Frame>& pKF, size_t idx);
+        void EraseObservation(const std::shared_ptr<Frame>& pKF);
 
         void SetBadFlag();
         bool isBad();
 
-        void Replace(MapPoint* pMP);
-        MapPoint* GetReplaced();
+        void IncreaseVisible(int n=1);
+        void IncreaseFound(int n=1);
+        float GetFoundRatio();
+        inline int GetFound() const{return mnFound;}
 
+        void ComputeDistinctiveDescriptors();
 
+        void Replace(const std::shared_ptr<MapPoint>& pMP);
+        std::shared_ptr<MapPoint> GetReplaced();
+        cv::Mat GetDescriptor(){return mDescriptor;}
+
+        // distance
+        void UpdateNormalAndDepth();
+
+        float GetMinDistanceInvariance();
+        float GetMaxDistanceInvariance();
+        int PredictScale(const float &currentDist, std::shared_ptr<Frame> pF);
+
+        // tracking
+//        float mTrackProjX;
+//        float mTrackProjY;
+//        float mTrackProjXR;
+//        bool mbTrackInView;
+//        int mnTrackScaleLevel;
+//        float mTrackViewCos;
+//        long unsigned int mnTrackReferenceForFrame;
+//        long unsigned int mnLastFrameSeen;
+        long unsigned int last_projected_id;
+        int n_failed_reproj = 0;
+        cv::Mat_<double> grad;
+        int type;
+        static std::mutex mGlobalMutex;
     private:
         long unsigned int mnId;
         static long unsigned int nNextId;
-        long int mnFirstKFid;
-        long int mnFirstFrame;
+
         int nObs;
 
-        cv::Mat mWorldPos;
+        Eigen::Vector3f mWorldPos;
 
-        std::map<KeyFrame*, size_t> mObservations;
-        cv::Mat mNormalVector;
+        std::vector<std::shared_ptr<Feature>> mFeatures;
+        std::shared_ptr<Feature> mpRefFeature;
+        std::map<std::shared_ptr<Frame>, size_t> mObservations;
+        Eigen::Vector3f mNormalVector;
         cv::Mat mDescriptor;
-        KeyFrame* mpRefKf;
+        std::shared_ptr<Frame> mpRefKF;
 
         int mnVisible;
         int mnFound;
 
         bool mbBad;
-        MapPoint* mpReplaced;
+        std::shared_ptr<MapPoint> mpReplaced;
 
         float mfMinDistance;
         float mfMaxDistance;
 
-        Map* mpMap;
+        std::shared_ptr<Map> mpMap;
 
         std::mutex mMutexPos;
         std::mutex mMutexFeatures;
-        static std::mutex mGlobalMutex;
     };
 }
 
