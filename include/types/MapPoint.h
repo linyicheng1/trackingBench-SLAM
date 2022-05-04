@@ -21,7 +21,7 @@ namespace TRACKING_BENCH
 
         MapPoint(const Eigen::Vector3f &Pos, std::shared_ptr<Map>&  pMap,
                  std::shared_ptr<Frame>& pFrame,
-                 std::shared_ptr<Feature>&  features);
+                 std::shared_ptr<Feature>&  features, cv::Mat des);
         // pos
         void SetWorldPos(const Eigen::Vector3f& pos);
         Eigen::Vector3f GetWorldPos();
@@ -32,8 +32,9 @@ namespace TRACKING_BENCH
         // related frames
         std::shared_ptr<Frame> GetReferenceFrame();
         std::map<std::shared_ptr<Frame>, size_t> GetObservations();
+        bool GetCloseViewObs(const Eigen::Vector3f& framePos, std::shared_ptr<Feature>& ftr)const;
         std::vector<std::shared_ptr<Feature>> GetFeatures();
-        std::shared_ptr<Feature> GerReferenceFeature();
+        std::shared_ptr<Feature> GetReferenceFeature();
         int Observations();
         int GetIndexInFrame(const std::shared_ptr<Frame>& pKF);
         bool IsInFrame(const std::shared_ptr<Frame>& pKF);

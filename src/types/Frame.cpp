@@ -28,7 +28,7 @@ namespace TRACKING_BENCH
             mvInvLevelSigma2.at(i) = 1.f / mvLevelSigma2.at(i);
         }
         mfGridElementHeightInv = static_cast<float>(FRAME_GRID_COLS) / (float)imGray.cols;
-        mfGridElementWidthInv = static_cast<float>(FRAME_GRID_ROWS) / (float)imGray.rows;;
+        mfGridElementWidthInv = static_cast<float>(FRAME_GRID_ROWS) / (float)imGray.rows;
         ComputePyramid(imGray);
     }
 
@@ -86,7 +86,7 @@ namespace TRACKING_BENCH
 
     Eigen::Vector3f Frame::GetTranslation()
     {
-        std::unique_lock<std::mutex> lock(mMutexPose);
+        //std::unique_lock<std::mutex> lock(mMutexPose);
         return mTwc.block<3, 1>(0, 3);
     }
 
@@ -98,9 +98,12 @@ namespace TRACKING_BENCH
         mvKeys.reserve(pts.size());
         mvCVKeys.clear();
         mvCVKeys.reserve(pts.size());
+
+
         for(auto &pt:pts)
         {
-            auto f = std::make_shared<Feature>(nullptr, pt, Eigen::Vector3f::Zero(), (int)mvKeys.size());
+            auto pc = mpCamera->Cam2World(Eigen::Vector2f(pt.pt.x, pt.pt.y));
+            auto f = std::make_shared<Feature>(frame, pt, pc, (int)mvKeys.size());
             if(unDistort)
             {
                 f->px_un = mpCamera->UndistortPoint(f->px).block<2, 1>(0, 0);
@@ -112,19 +115,51 @@ namespace TRACKING_BENCH
         mvbOutlier.resize(pts.size(), false);
     }
 
-    void Frame::AddKeys(std::vector<Feature>& pts, cv::Mat descriptors, bool unDistort)
+    void Frame::AddKeys(std::vector<cv::KeyPoint>& pts,
+                        const std::vector<shared_ptr<MapPoint>>& mps,
+                        cv::Mat descriptors,
+                        bool unDistort)
     {
         mDescriptors = std::move(descriptors);
         mvKeys.reserve(pts.size() + mvKeys.size());
         mvCVKeys.reserve(pts.size() + mvKeys.size());
+        bool add_mps = false;
+        if (mps.size() == pts.size())
+        {
+            add_mps = true;
+        }
+
+        int size = -1;
         for(auto &pt:pts)
         {
+            size ++;
+            auto pc = mpCamera->Cam2World(Eigen::Vector2f(pt.pt.x, pt.pt.y));
+            auto f = std::make_shared<Feature>(nullptr, pt, pc, (int)mvKeys.size());
             if(unDistort)
             {
-                pt.px_un = mpCamera->UndistortPoint(pt.px).block<2, 1>(0, 0);
+                f->px_un = mpCamera->UndistortPoint(f->px).block<2, 1>(0, 0);
             }
-            // mvKeys.emplace_back(pt);
+            mvKeys.emplace_back(f);
+            mvCVKeys.emplace_back(pt.pt);
+            mvbOutlier.emplace_back(false);
+            if (!add_mps)
+                mvpMapPoints.emplace_back(nullptr);
+            else
+                mvpMapPoints.emplace_back(mps.at(size));
         }
+    }
+
+    void Frame::AddKey(cv::KeyPoint pt,
+                       shared_ptr<MapPoint>& mp,
+                       bool unDistort)
+    {
+        auto pc = mpCamera->Cam2World(Eigen::Vector2f(pt.pt.x, pt.pt.y));
+        auto f = std::make_shared<Feature>(nullptr, mp, pt, pc, (int)mvKeys.size());
+
+        mvKeys.emplace_back(f);
+        mvCVKeys.emplace_back(pt.pt);
+        mvbOutlier.emplace_back(false);
+        mvpMapPoints.emplace_back(mp);
     }
 
     void Frame::UnDistortPoints()
@@ -321,9 +356,9 @@ namespace TRACKING_BENCH
             mvpMapPoints[idx] = static_cast<std::shared_ptr<MapPoint>>(nullptr);
     }
 
-    void Frame::ReplaceMapPointMatch(const size_t &idx, std::shared_ptr<MapPoint> pMP)
+    void Frame::ReplaceMapPointMatch(const size_t &idx, const std::shared_ptr<MapPoint>& pMP)
     {
-        mvpMapPoints[idx] = std::move(pMP);
+        mvpMapPoints[idx] = pMP;
     }
 
     bool Frame::IsInImage(const float &x, const float &y) const
@@ -346,9 +381,9 @@ namespace TRACKING_BENCH
 
         // image
         auto uv = mpCamera->World2Cam(Pc);
-        // TODO
-//        if(!mpCamera->IsInFrame(uv))
-//            return false;
+
+        if(!mpCamera->IsInFrame(uv.cast<int>()))
+            return false;
 
         // check distance
         const float maxDistance = pMP->GetMaxDistanceInvariance();
@@ -365,7 +400,7 @@ namespace TRACKING_BENCH
         if(viewCos < viewingCosLimit)
             return false;
         // predict scale in the image
-        const int nPredictedLevel = pMP->PredictScale(dist, static_cast<std::shared_ptr<Frame>>(this));
+        const int nPredictedLevel = 0;//pMP->PredictScale(dist, static_cast<std::shared_ptr<Frame>>(this));
         // data used by the tracking
 
         x = (float)uv[0];
@@ -378,9 +413,22 @@ namespace TRACKING_BENCH
 
     void Frame::ComputePyramid(cv::Mat image)
     {
+        mvImagePyramid.resize(0);
+        for (int i = 0; i < nLevels; i++) {
+            float scale = mvScaleFactor[i];
+            if (i == 0) {
+                mvImagePyramid.push_back(image);
+            } else {
+                cv::Mat img1_pyr;
+                cv::resize(mvImagePyramid[i - 1], img1_pyr,
+                           cv::Size(image.cols * scale,image.rows * scale));
+                mvImagePyramid.push_back(img1_pyr);
+            }
+        }
+        /*
         for (int level = 0; level < nLevels; ++level)
         {
-            float scale = mvInvScaleFactor[level];
+            float scale = mvScaleFactor[level];
             cv::Size sz(cvRound((float)image.cols*scale), cvRound((float)image.rows*scale));
             cv::Size wholeSize(sz.width + EDGE_THRESHOLD*2, sz.height + EDGE_THRESHOLD*2);
             cv::Mat temp(wholeSize, image.type()), masktemp;
@@ -399,7 +447,7 @@ namespace TRACKING_BENCH
                 copyMakeBorder(image, temp, EDGE_THRESHOLD, EDGE_THRESHOLD, EDGE_THRESHOLD, EDGE_THRESHOLD,
                                cv::BORDER_REFLECT_101);
             }
-        }
+        }*/
     }
 
     cv::Mat Frame::Equalize()
@@ -408,9 +456,5 @@ namespace TRACKING_BENCH
         clahe->apply(mvImagePyramid[0], mImage);
         return mImage;
     }
-
-
-
-
 }
 

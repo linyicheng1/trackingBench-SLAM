@@ -22,6 +22,7 @@ include_directories(
         ${EIGEN3_INCLUDE_DIR}
         ${Pangolin_INCLUDE_DIRS}
         ${CHOLMOD_INCLUDE_DIR}
+        ${Sophus_INCLUDE_DIRS}
 )
 
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/lib)
@@ -70,3 +71,7 @@ target_link_libraries(test_matcher ${PROJECT_NAME})
 
 add_executable(test_VO test/test_vo.cpp)
 target_link_libraries(test_VO ${PROJECT_NAME})
+
+add_executable(test_projection test/test_projection.cpp)
+target_link_libraries(test_projection ${PROJECT_NAME})
+

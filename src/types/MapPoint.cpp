@@ -12,11 +12,13 @@ namespace TRACKING_BENCH
 
     MapPoint::MapPoint(const Eigen::Vector3f &Pos, std::shared_ptr<Map>&  pMap,
                        std::shared_ptr<Frame>& pFrame,
-                       std::shared_ptr<Feature>&  features):
+                       std::shared_ptr<Feature>&  features,
+                       cv::Mat des):
             nObs(0),mWorldPos(Pos),mpRefKF(pFrame), mnVisible(1),
             mnFound(1), mbBad(false), mpReplaced(nullptr), mpMap(pMap),
-            mpRefFeature(features)
+            mpRefFeature(features),mDescriptor(des)
     {
+        mFeatures.emplace_back(mpRefFeature);
         Eigen::Vector3f Ow = mpRefKF->GetCameraCenter();
         mNormalVector = mWorldPos - Ow;
         mNormalVector = mNormalVector.normalized();
@@ -37,6 +39,7 @@ namespace TRACKING_BENCH
         std::unique_lock<std::mutex> lock(mpMap->mMutexPointCreation);
         mnId=nNextId++;
         mpRefKF = nullptr;
+
     }
 
     /**
@@ -204,13 +207,13 @@ namespace TRACKING_BENCH
     float MapPoint::GetMinDistanceInvariance()
     {
         std::unique_lock<std::mutex> lock(mMutexPos);
-        return 0.8f * mfMinDistance;
+        return 1;//0.8f * mfMinDistance;
     }
 
     float MapPoint::GetMaxDistanceInvariance()
     {
         std::unique_lock<std::mutex> lock(mMutexPos);
-        return 1.2f * mfMaxDistance;
+        return 1000;//1.2f * mfMaxDistance;
     }
 
     int MapPoint::PredictScale(const float &currentDist, std::shared_ptr<Frame> pF)
@@ -362,8 +365,30 @@ namespace TRACKING_BENCH
         return mFeatures;
     }
 
-    std::shared_ptr<Feature> MapPoint::GerReferenceFeature()
+    std::shared_ptr<Feature> MapPoint::GetReferenceFeature()
     {
         return mpRefFeature;
+    }
+
+    bool MapPoint::GetCloseViewObs(const Eigen::Vector3f &framePos, shared_ptr<Feature> &ftr) const
+    {
+        Eigen::Vector3f obs_dir(framePos - mWorldPos);
+        obs_dir.normalize();
+        float min_cos_angle = 0;
+        for (const auto& item:mFeatures)
+        {
+            Eigen::Vector3f dir(item->frame->GetTranslation() - mWorldPos);
+            dir.normalize();
+            float cos_angle = obs_dir.dot(dir);
+            if (cos_angle > min_cos_angle)
+            {
+                min_cos_angle = cos_angle;
+                ftr = item;
+            }
+        }
+
+        if (min_cos_angle < 0.5)
+            return false;
+        return true;
     }
 }

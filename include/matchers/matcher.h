@@ -75,7 +75,9 @@ namespace TRACKING_BENCH
                 const std::shared_ptr<Frame>& F1,
                 const std::shared_ptr<Frame>& F2);
 
-        std::vector<cv::DMatch> searchByProjection(Map* map, Frame* F1);
+        std::vector<cv::DMatch> searchByProjection(
+                const std::shared_ptr<Map>& map,
+                const std::shared_ptr<Frame>& F1, float r);
 
         // Bow accelerate ORB only
         void setBowParam(int low, int high, int histo_length, bool check, float ratio)
@@ -106,13 +108,22 @@ namespace TRACKING_BENCH
         int mnIter;
         int mnNTrialsMax;
         double mdEps;
+
+        void setDirectParam(int maxLevel, int minLevel, int iter, int trials, double eps)
+        {
+            mnMaxLevel = maxLevel;
+            mnMinLevel = minLevel;
+            mnIter = iter;
+            mnNTrialsMax = trials;
+            mdEps = eps;
+        }
         Eigen::Matrix<double, 6, Eigen::Dynamic, Eigen::ColMajor> jacobian_cache;
 
         struct Candidate {
             EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-            MapPoint* pt;       //!< 3D point.
-            cv::Vec2d px;     //!< projected 2D pixel location.
-            Candidate(MapPoint* pt, cv::Vec2d& x) : pt(pt), px(x) {}
+            std::shared_ptr<MapPoint> pt;       //!< 3D point.
+            Eigen::Vector2f px;     //!< projected 2D pixel location.
+            Candidate(const std::shared_ptr<MapPoint>& pt, Eigen::Vector2f& x) : pt(pt), px(x) {}
         };
         typedef std::list<Candidate > Cell;
         typedef std::vector<Cell*> CandidateGrid;
@@ -126,8 +137,14 @@ namespace TRACKING_BENCH
             int grid_n_rows;
         };
         Grid grid_;
-
-        std::vector<cv::DMatch> searchByDirect(Map* M, Frame* F1, Frame* F2);
+        Eigen::Matrix<float, 4, 4> SparseImageAlign(const std::shared_ptr<Frame>& F1, const std::shared_ptr<Frame>& F2);
+        std::vector<cv::DMatch> FeaturesAlign(
+                const std::shared_ptr<Map>& M,
+                const std::shared_ptr<Frame>& F1,
+                int maxFtx = 1000);
+        std::vector<cv::DMatch> searchByDirect(std::shared_ptr<Map> M, const std::shared_ptr<Frame>& F1, const std::shared_ptr<Frame>& F2);
+        bool Align2D(const cv::Mat& cur_img, uint8_t* ref_patch_with_border, uint8_t* ref_patch, const int n_iter, Eigen::Vector2f& cur_ps_estimate, bool no_simd = false);
+        bool FindMatchDirect(std::shared_ptr<MapPoint>& pt, const std::shared_ptr<Frame>& F1, Eigen::Vector2f& px_cur);
 
         static int DescriptorDistance(const cv::Mat& a, const cv::Mat& b);
         static void ComputeThreeMaxima(std::vector<int>* histo, const int L, int &ind1, int &ind2, int &ind3);
@@ -144,14 +161,24 @@ namespace TRACKING_BENCH
         Eigen::Matrix<double, 6, 6> mH;
         Eigen::Matrix<double, 6, 1> mJRes;
         Eigen::Matrix<double, 6, 1> mx;
-        Eigen::Matrix<float, 4, 4> SparseImageAlign(Frame* F1, Frame* F2);
-        std::vector<cv::DMatch> FeaturesAlign(Map* M, Frame* F1);
-        double ComputeResiduals(cv::Mat& T_cur_from_ref, Frame* F1, Frame* F2, std::vector<bool>& visible_fts, int level, bool linearize_system, bool compute_weight_scale);
-        void PreComputeReferencePatches( Frame* F1, Frame* F2, int level);
 
-        bool ReprojectCell(Cell& cell, Frame* frame);
-        bool FindMatchDirect(const MapPoint&pt, Frame* F1, cv::Vec2d& px_cur);
-        bool Align2D(const cv::Mat& cur_img, uint8_t* ref_patch_with_border, uint8_t* ref_patch, const int n_iter, Eigen::Vector2d& cur_ps_estimate, bool no_simd = false);
+
+        double ComputeResiduals(Eigen::Matrix4f& T_cur_from_ref,
+                const std::shared_ptr<Frame>& F1,
+                const std::shared_ptr<Frame>& F2,
+                const std::vector<int>& F2_ids,
+                std::vector<bool>& visible_fts,
+                int level, bool linearize_system);
+        void PreComputeReferencePatches(
+                const std::shared_ptr<Frame>& F1,
+                const std::shared_ptr<Frame>& F2,
+                const std::vector<int>& F2_ids,
+                std::vector<bool>& visible_fts,
+                int level);
+
+        bool ReprojectCell(Cell& cell, const std::shared_ptr<Frame>& frame);
+        //bool FindMatchDirect(std::shared_ptr<MapPoint>& pt, const std::shared_ptr<Frame>& F1, Eigen::Vector2f& px_cur);
+        //bool Align2D(const cv::Mat& cur_img, uint8_t* ref_patch_with_border, uint8_t* ref_patch, const int n_iter, Eigen::Vector2f& cur_ps_estimate, bool no_simd = false);
         bool Align1D(const cv::Mat& cur_img,const Eigen::Vector2f& dir,uint8_t* ref_patch_with_border,uint8_t* ref_patch,const int n_iter,Eigen::Vector2d& cur_px_estimate,double& h_inv);
     };
 }

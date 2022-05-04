@@ -16,8 +16,8 @@
 namespace TRACKING_BENCH
 {
 
-#define FRAME_GRID_ROWS 48
-#define FRAME_GRID_COLS 64
+#define FRAME_GRID_ROWS 36
+#define FRAME_GRID_COLS 120
     const int EDGE_THRESHOLD = 19;
     typedef DBoW2::TemplatedVocabulary<DBoW2::FORB::TDescriptor, DBoW2::FORB> ORBVocabulary;
 
@@ -42,7 +42,7 @@ namespace TRACKING_BENCH
         }
 
         Feature(std::shared_ptr<Frame> _frame, std::shared_ptr<MapPoint> _point, cv::KeyPoint& _kp, Eigen::Vector3f _f, int id):
-            frame(std::move(_frame)),kp(_kp),point(std::move(_point)),px(_kp.pt.x, _kp.pt.y),f(std::move(_f)),idxF(id)
+            frame(std::move(_frame)),kp(_kp),point(_point),px(_kp.pt.x, _kp.pt.y),f(std::move(_f)),idxF(id)
         {
         }
 
@@ -67,7 +67,10 @@ namespace TRACKING_BENCH
 
         // features
         void SetKeys(std::vector<cv::KeyPoint>& pts,const std::shared_ptr<Frame>& frame, cv::Mat mDescriptors = cv::Mat(), bool unDistort = false);
-        void AddKeys(std::vector<Feature>& pts, cv::Mat mDescriptors = cv::Mat(), bool unDistort = false);
+        void AddKeys(std::vector<cv::KeyPoint>& pts,const std::vector<shared_ptr<MapPoint>>& mps = std::vector<std::shared_ptr<MapPoint>>(),cv::Mat descriptors = cv::Mat(),bool unDistort = false);
+        void AddKey(cv::KeyPoint pts,
+                    shared_ptr<MapPoint>& mps,
+                    bool unDistort = false);
         void UnDistortPoints();
         void UnDistortImage();
         std::vector<std::shared_ptr<Feature>>& GetKeys(){return mvKeys;}
@@ -105,7 +108,7 @@ namespace TRACKING_BENCH
         void AddMapPoints(const std::shared_ptr<Map>& map, const std::vector<cv::DMatch>& matches);
         void EraseMapPointMatch(const size_t &idx);
         void EraseMapPointMatch(const std::shared_ptr<MapPoint>& pMP);
-        void ReplaceMapPointMatch(const size_t &idx, std::shared_ptr<MapPoint> pMP);
+        void ReplaceMapPointMatch(const size_t &idx, const std::shared_ptr<MapPoint> &pMP);
 
         // key frame
         int GetMaxLevel() const{return nLevels;}
@@ -127,13 +130,13 @@ namespace TRACKING_BENCH
         bool IsInFrustum(const std::shared_ptr<MapPoint>& pMP, int &level, float &x, float &y, float &view);
 
         inline static void JacobianXYZ2uv(
-                const cv::Mat& xyz_in_f,
+                const Eigen::Vector3f& xyz_in_f,
                 Eigen::Matrix<double, 2, 6>& J
                 )
         {
-            const double x = xyz_in_f.at<double>(0);
-            const double y = xyz_in_f.at<double>(1);
-            const double z_inv = 1. / xyz_in_f.at<double>(2);
+            const double x = xyz_in_f(0);
+            const double y = xyz_in_f(1);
+            const double z_inv = 1. / xyz_in_f(2);
             const double z_inv_2 = z_inv * z_inv;
 
             J(0,0) = -z_inv;
@@ -149,6 +152,7 @@ namespace TRACKING_BENCH
             J(1, 3) = 1.0 + y * J(1, 2);
             J(1, 4) = -J(0, 3);
             J(1, 5) = - x * z_inv;
+            //std::cout<<"J: "<<J * 89.857<<std::endl;
         }
 
     protected:

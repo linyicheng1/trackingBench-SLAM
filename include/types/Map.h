@@ -34,9 +34,9 @@ namespace TRACKING_BENCH
         std::mutex mMutexPointCreation;
         std::mutex mMutexMap;
         std::mutex mMutexMapPoints;
+        std::list<std::shared_ptr<MapPoint>> mspCandidatesMapPoints;
     private:
         std::set<std::shared_ptr<MapPoint>> mspMapPoints;
-        std::list<std::shared_ptr<MapPoint>> mspCandidatesMapPoints;
         std::set<std::shared_ptr<Frame>> mspKeyFrames;
         long unsigned int mnMaxKFid;
     };
